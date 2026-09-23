@@ -54,10 +54,10 @@ function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken)
  */
 app.all('/*splat', async (req, res) => {
   // Strip out leading slash to get a clean path (e.g., "slot/filename.png")
-  // const uploadFileName = req.path.replace(/^\/+/, '');
+  const uploadFileName = req.path.replace(/^\/+/, '');
   // Extract the exact path as Prosody sent it, removing ONLY the leading domain slash
   // Example: "/upload/slot/file.jpg" becomes "upload/slot/file.jpg"
-  const uploadFileName = req.path.startsWith('/') ? req.path.slice(1) : req.path;
+  // const uploadFileName = req.path.startsWith('/') ? req.path.slice(1) : req.path;
   console.log('1- ', req.path)
   console.log('2- ', JSON.stringify(req.query))
 
