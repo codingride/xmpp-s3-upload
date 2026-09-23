@@ -59,7 +59,7 @@ app.all('/*splat', async (req, res) => {
   // Example: "/upload/slot/file.jpg" becomes "upload/slot/file.jpg"
   const uploadFileName = req.path.startsWith('/') ? req.path.slice(1) : req.path;
   console.log('1- ', req.path)
-  console.log('2- ', req.query)
+  console.log('2- ', req.query.toString())
 
   // Skip requests that don't target an actual file slot path (e.g., favicon)
   if (!uploadFileName || uploadFileName === 'favicon.ico') {
