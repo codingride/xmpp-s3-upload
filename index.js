@@ -28,15 +28,10 @@ const r2Client = new S3Client({
   },
 });
 
-/**
- * Validates Prosody token using the exact layout from the PHP creator script.
- * Format: HMAC-SHA256("filename filesize", SECRET)
- */
 function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken) {
   if (!receivedToken || !uploadFileSize) return false;
 
   const signedData = `${uploadFileName} ${uploadFileSize}`;
-  
   const expectedToken = crypto
     .createHmac('sha256', SECRET)
     .update(signedData)
@@ -53,50 +48,66 @@ function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken)
   }
 }
 
-// GET Route redirection to R2 public domain
-app.get('/upload/:slot/:filename', (req, res) => {
-  const { slot, filename } = req.params;
-  return res.redirect(`${process.env.R2_PUBLIC_DOMAIN}/${slot}/${filename}`);
-});
+/**
+ * CATCH-ALL ROUTE
+ * Captures anything appended to the domain root
+ */
+app.all('*', async (req, res) => {
+  // Strip out leading slash to get clean path (e.g. "slot/filename.png")
+  const uploadFileName = req.path.replace(/^\/+/, ''); 
 
-// PUT Route to handle uploads
-app.put('/upload/:slot/:filename', async (req, res) => {
-  const { slot, filename } = req.params;
-  
-  // Prosody provides the original path schema via request properties or matching the slot configuration
-  const uploadFileName = `${slot}/${filename}`; 
-  const contentLength = req.headers['content-length'];
-  const uploadToken = req.query.v; // The token key parameter is 'v', not 'v2'
-
-  if (!contentLength) {
-    return res.status(411).send('Length Required');
+  // Skip requests that don't target an actual file slot path (e.g. favicon)
+  if (!uploadFileName || uploadFileName === 'favicon.ico') {
+    return res.status(404).send('Not Found');
   }
 
-  // Validate signature exactly like mod_http_upload_external expects
-  if (!validateProsodySignature(uploadFileName, contentLength, uploadToken)) {
-    console.log(`Token mismatch context: Received token ${uploadToken}`);
-    return res.status(403).send('Forbidden: Invalid HMAC signature token.');
+  const requestMethod = req.method;
+
+  // --- HANDLE GET / HEAD (DOWNLOAD) ---
+  if (requestMethod === 'GET' || requestMethod === 'HEAD') {
+    console.log(`[GET/HEAD] Redirecting download request for: ${uploadFileName}`);
+    return res.redirect(`${process.env.R2_PUBLIC_DOMAIN}/${uploadFileName}`);
   }
 
-  try {
-    const contentType = req.headers['content-type'] || 'application/octet-stream';
+  // --- HANDLE PUT (UPLOAD) ---
+  if (requestMethod === 'PUT') {
+    console.log(`[PUT] Incoming upload request for: ${uploadFileName}`);
+    
+    const contentLength = req.headers['content-length'];
+    const uploadToken = req.query.v; // 'v' query param from mod_http_upload_external
 
-    const uploadParams = {
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: `${slot}/${filename}`,
-      Body: req, // Streams the incoming request directly to S3/R2
-      ContentType: contentType,
-      ContentLength: parseInt(contentLength, 10)
-    };
+    if (!contentLength) {
+      return res.status(411).send('Length Required');
+    }
 
-    await r2Client.send(new PutObjectCommand(uploadParams));
+    if (!validateProsodySignature(uploadFileName, contentLength, uploadToken)) {
+      console.warn(`[403] Token mismatch for ${uploadFileName}. Got: ${uploadToken}`);
+      return res.status(403).send('Forbidden: Invalid HMAC signature token.');
+    }
 
-    // A HTTP status Code of 201 means that the server is ready to serve the file
-    res.status(201).send('File uploaded successfully to R2.');
-  } catch (error) {
-    console.error('R2 Upload Failure:', error);
-    res.status(500).send('Internal Server Error while pushing to cloud storage.');
+    try {
+      const contentType = req.headers['content-type'] || 'application/octet-stream';
+
+      const uploadParams = {
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: uploadFileName,
+        Body: req, 
+        ContentType: contentType,
+        ContentLength: parseInt(contentLength, 10)
+      };
+
+      await r2Client.send(new PutObjectCommand(uploadParams));
+      console.log(`[201] Successfully uploaded ${uploadFileName} to R2`);
+
+      return res.sendStatus(201);
+    } catch (error) {
+      console.error('R2 Upload Failure:', error);
+      return res.status(500).send('Internal Server Error while pushing to cloud storage.');
+    }
   }
+
+  // Fallback for unhandled verbs
+  return res.status(400).send('Bad Request');
 });
 
 app.listen(PORT, () => {
