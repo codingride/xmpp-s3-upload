@@ -58,6 +58,8 @@ app.all('/*splat', async (req, res) => {
   // Extract the exact path as Prosody sent it, removing ONLY the leading domain slash
   // Example: "/upload/slot/file.jpg" becomes "upload/slot/file.jpg"
   const uploadFileName = req.path.startsWith('/') ? req.path.slice(1) : req.path;
+  console.log('1- ', req.path)
+  console.log('2- ', req.query)
 
   // Skip requests that don't target an actual file slot path (e.g., favicon)
   if (!uploadFileName || uploadFileName === 'favicon.ico') {
