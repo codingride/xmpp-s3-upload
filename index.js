@@ -55,11 +55,6 @@ function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken)
 app.all('/*splat', async (req, res) => {
   // Strip out leading slash to get a clean path (e.g., "slot/filename.png")
   const uploadFileName = req.path.replace(/^\/+/, '');
-  // Extract the exact path as Prosody sent it, removing ONLY the leading domain slash
-  // Example: "/upload/slot/file.jpg" becomes "upload/slot/file.jpg"
-  // const uploadFileName = req.path.startsWith('/') ? req.path.slice(1) : req.path;
-  console.log('1- ', req.path)
-  console.log('2- ', JSON.stringify(req.query))
 
   // Skip requests that don't target an actual file slot path (e.g., favicon)
   if (!uploadFileName || uploadFileName === 'favicon.ico') {
@@ -76,7 +71,7 @@ app.all('/*splat', async (req, res) => {
 
   // --- HANDLE PUT (UPLOAD) ---
   if (requestMethod === 'PUT') {
-    console.log(`[PUT] Incoming upload request for: ${uploadFileName}`);
+    // console.log(`[PUT] Incoming upload request for: ${uploadFileName}`);
     
     const contentLength = req.headers['content-length'];
     const uploadToken = req.query.v; // 'v' query param from mod_http_upload_external
@@ -86,7 +81,7 @@ app.all('/*splat', async (req, res) => {
     }
 
     if (!validateProsodySignature(uploadFileName, contentLength, uploadToken)) {
-      console.warn(`⚠️ Token mismatch for ${uploadFileName}. Got: ${uploadToken}`);
+      // console.warn(`⚠️ Token mismatch for ${uploadFileName}. Got: ${uploadToken}`);
       return res.status(403).send('Forbidden: Invalid HMAC signature token.');
     }
 
@@ -102,7 +97,7 @@ app.all('/*splat', async (req, res) => {
       };
 
       await r2Client.send(new PutObjectCommand(uploadParams));
-      console.log(`✅ Successfully uploaded ${uploadFileName} to R2`);
+      // console.log(`✅ Successfully uploaded ${uploadFileName} to R2`);
 
       return res.sendStatus(201);
     } catch (error) {
