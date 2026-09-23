@@ -17,22 +17,25 @@ const r2Client = new S3Client({
 });
 
 function validateProsodySignature(path, queryString) {
- 
-  const params = new URLSearchParams(queryString);
-  const receivedToken = params.get('v2');
-  if (!receivedToken) return false;
+  try {
+    const params = new URLSearchParams(queryString);
+    const receivedToken = params.get('v2');
+    if (!receivedToken) return false;
 
-  params.delete('v2');
+    params.delete('v2');
 
-  const remainingQuery = params.toString();
-  const signedData = remainingQuery ? `${path}?${remainingQuery}` : path;
-  
-  const expectedToken = crypto
-    .createHmac('sha256', SECRET)
-    .update(signedData)
-    .digest('hex');
+    const remainingQuery = params.toString();
+    const signedData = remainingQuery ? `${path}?${remainingQuery}` : path;
 
-  return crypto.timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
+    const expectedToken = crypto
+      .createHmac('sha256', SECRET)
+      .update(signedData)
+      .digest('hex');
+
+    return crypto.timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
+  } catch (error) {
+    console.log(error);
+  }
 }
 
 app.get('/upload/:slot/:filename', (req, res) => {
