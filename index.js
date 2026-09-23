@@ -7,6 +7,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.PROSODY_SECRET;
 
+// Enable CORS matching the PHP implementation rules
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Max-Age', '7200');
+  res.header('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 const r2Client = new S3Client({
   region: 'auto',
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -16,60 +28,70 @@ const r2Client = new S3Client({
   },
 });
 
-function validateProsodySignature(path, queryString) {
+/**
+ * Validates Prosody token using the exact layout from the PHP creator script.
+ * Format: HMAC-SHA256("filename filesize", SECRET)
+ */
+function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken) {
+  if (!receivedToken || !uploadFileSize) return false;
+
+  const signedData = `${uploadFileName} ${uploadFileSize}`;
+  
+  const expectedToken = crypto
+    .createHmac('sha256', SECRET)
+    .update(signedData)
+    .digest('hex');
+
   try {
-    const params = new URLSearchParams(queryString);
-    const receivedToken = params.get('v2');
-    if (!receivedToken) return false;
-
-    params.delete('v2');
-
-    const remainingQuery = params.toString();
-    const signedData = remainingQuery ? `${path}?${remainingQuery}` : path;
-
-    const expectedToken = crypto
-      .createHmac('sha256', SECRET)
-      .update(signedData)
-      .digest('hex');
-
-    return crypto.timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
+    return crypto.timingSafeEqual(
+      Buffer.from(receivedToken, 'utf-8'), 
+      Buffer.from(expectedToken, 'utf-8')
+    );
   } catch (error) {
-    console.log(error);
+    console.error("Token comparison error:", error);
+    return false;
   }
 }
 
+// GET Route redirection to R2 public domain
 app.get('/upload/:slot/:filename', (req, res) => {
   const { slot, filename } = req.params;
   return res.redirect(`${process.env.R2_PUBLIC_DOMAIN}/${slot}/${filename}`);
 });
 
+// PUT Route to handle uploads
 app.put('/upload/:slot/:filename', async (req, res) => {
   const { slot, filename } = req.params;
-  const rawPath = req.path;
-  const queryString = req.url.split('?')[1] || '';
+  
+  // Prosody provides the original path schema via request properties or matching the slot configuration
+  const uploadFileName = `${slot}/${filename}`; 
+  const contentLength = req.headers['content-length'];
+  const uploadToken = req.query.v; // The token key parameter is 'v', not 'v2'
 
-  if (!validateProsodySignature(rawPath, queryString)) {
+  if (!contentLength) {
+    return res.status(411).send('Length Required');
+  }
+
+  // Validate signature exactly like mod_http_upload_external expects
+  if (!validateProsodySignature(uploadFileName, contentLength, uploadToken)) {
+    console.log(`Token mismatch context: Received token ${uploadToken}`);
     return res.status(403).send('Forbidden: Invalid HMAC signature token.');
   }
 
   try {
-    const contentLength = req.headers['content-length'];
     const contentType = req.headers['content-type'] || 'application/octet-stream';
-
-    if (!contentLength) {
-      return res.status(411).send('Length Required');
-    }
 
     const uploadParams = {
       Bucket: process.env.R2_BUCKET_NAME,
       Key: `${slot}/${filename}`,
-      Body: req,
+      Body: req, // Streams the incoming request directly to S3/R2
       ContentType: contentType,
       ContentLength: parseInt(contentLength, 10)
     };
 
     await r2Client.send(new PutObjectCommand(uploadParams));
 
+    // A HTTP status Code of 201 means that the server is ready to serve the file
     res.status(201).send('File uploaded successfully to R2.');
   } catch (error) {
     console.error('R2 Upload Failure:', error);
