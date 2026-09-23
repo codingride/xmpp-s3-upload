@@ -50,13 +50,13 @@ function validateProsodySignature(uploadFileName, uploadFileSize, receivedToken)
 
 /**
  * CATCH-ALL ROUTE
- * Captures anything appended to the domain root
+ * Captures anything appended to the domain root using named wildcard syntax
  */
-app.all('*', async (req, res) => {
-  // Strip out leading slash to get clean path (e.g. "slot/filename.png")
+app.all('/*splat', async (req, res) => {
+  // Strip out leading slash to get a clean path (e.g., "slot/filename.png")
   const uploadFileName = req.path.replace(/^\/+/, ''); 
 
-  // Skip requests that don't target an actual file slot path (e.g. favicon)
+  // Skip requests that don't target an actual file slot path (e.g., favicon)
   if (!uploadFileName || uploadFileName === 'favicon.ico') {
     return res.status(404).send('Not Found');
   }
@@ -81,7 +81,7 @@ app.all('*', async (req, res) => {
     }
 
     if (!validateProsodySignature(uploadFileName, contentLength, uploadToken)) {
-      console.warn(`[403] Token mismatch for ${uploadFileName}. Got: ${uploadToken}`);
+      console.warn(`⚠️ Token mismatch for ${uploadFileName}. Got: ${uploadToken}`);
       return res.status(403).send('Forbidden: Invalid HMAC signature token.');
     }
 
@@ -97,7 +97,7 @@ app.all('*', async (req, res) => {
       };
 
       await r2Client.send(new PutObjectCommand(uploadParams));
-      console.log(`[201] Successfully uploaded ${uploadFileName} to R2`);
+      console.log(`✅ Successfully uploaded ${uploadFileName} to R2`);
 
       return res.sendStatus(201);
     } catch (error) {
