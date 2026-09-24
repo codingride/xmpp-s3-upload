@@ -65,7 +65,7 @@ app.all('/*splat', async (req, res) => {
 
   // --- HANDLE GET / HEAD (DOWNLOAD) ---
   if (requestMethod === 'GET' || requestMethod === 'HEAD') {
-    console.log(`[GET/HEAD] Redirecting download request for: ${uploadFileName}`);
+    // console.log(`[GET/HEAD] Redirecting download request for: ${uploadFileName}`);
     return res.redirect(`${process.env.R2_PUBLIC_DOMAIN}/${uploadFileName}`);
   }
 
